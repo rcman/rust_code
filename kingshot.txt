@@ -1,0 +1,5 @@
+This is a simple clone of the “King Shot” (Kingshot ad-style) gameplay, inspired by Thronefall. It’s a basic 2D tower defense where you control a king on a throne who can shoot projectiles by clicking the mouse towards enemies. Towers auto-shoot. Enemies spawn in waves from the sides and try to reach the king. Survive as many waves as possible!
+To run this:
+1.  Install Pygame: pip install pygame
+2.  Run the script: python kingshot_clone.py
+Note: This is a minimalist version. The full game has more features like building phases, heroes, etc., but this captures the core shooting/defense loop from the ads. Yellow projectiles are from towers, white from the king.
