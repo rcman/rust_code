@@ -1,0 +1,15 @@
+This is a simplified clone of StarCraft implemented in Python using Pygame. It includes core features like:
+•  Races: Basic Terran (human player) and Zerg (simple AI opponent).
+•  Units: Workers (for gathering), Marines (Terran), Zerglings (Zerg). Units can move, attack, and harvest resources.
+•  Buildings: Command Center/Hatchery (starting), Supply Depot (not fully implemented), Barracks (buildable for training Marines).
+•  Resources: Minerals (gathering from patches; gas not fully implemented).
+•  Supply System: Basic tracking (increases with training).
+•  Selection and Commands: Box selection, move/harvest/attack orders via mouse.
+•  AI: Simple behaviors like harvesting, training units, and attacking.
+•  Map: Procedurally generated terrain with resource nodes.
+•  Combat: Basic health/damage system.
+To run it:
+1.  Ensure Pygame is installed (pip install pygame).
+2.  Save the code to a file (e.g., starcraft_clone.py).
+3.  Run python starcraft_clone.py.
+This is a prototype—full StarCraft has campaigns, multiplayer, more units/buildings, fog of war, etc. Expanding it would require more code, assets (sprites/sounds), and balancing. If you’d like additions (e.g., Protoss race, better AI, or specific features), let me know!
