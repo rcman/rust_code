@@ -1,0 +1,126 @@
+// A simple student grade manager in Rust
+use std::collections::HashMap;
+
+// Define a struct to represent a student
+#[derive(Debug, Clone)]
+struct Student {
+    name: String,
+    id: u32,
+    grades: Vec<f64>,
+}
+
+impl Student {
+    // Constructor function
+    fn new(name: String, id: u32) -> Self {
+        Student {
+            name,
+            id,
+            grades: Vec::new(),
+        }
+    }
+    
+    // Method to add a grade
+    fn add_grade(&mut self, grade: f64) {
+        if grade >= 0.0 && grade <= 100.0 {
+            self.grades.push(grade);
+        } else {
+            println!("Invalid grade: {}. Must be between 0 and 100.", grade);
+        }
+    }
+    
+    // Method to calculate average grade
+    fn average_grade(&self) -> Option<f64> {
+        if self.grades.is_empty() {
+            None
+        } else {
+            let sum: f64 = self.grades.iter().sum();
+            Some(sum / self.grades.len() as f64)
+        }
+    }
+    
+    // Method to get letter grade
+    fn letter_grade(&self) -> Option<char> {
+        self.average_grade().map(|avg| {
+            match avg {
+                90.0..=100.0 => 'A',
+                80.0..=89.9 => 'B',
+                70.0..=79.9 => 'C',
+                60.0..=69.9 => 'D',
+                _ => 'F',
+            }
+        })
+    }
+}
+
+// Function that demonstrates ownership and borrowing
+fn print_student_info(student: &Student) {
+    println!("Student: {} (ID: {})", student.name, student.id);
+    
+    if let Some(avg) = student.average_grade() {
+        if let Some(letter) = student.letter_grade() {
+            println!("Average: {:.2}% ({})", avg, letter);
+        }
+    } else {
+        println!("No grades recorded");
+    }
+    
+    println!("Grades: {:?}\n", student.grades);
+}
+
+fn main() {
+    // Create a HashMap to store students
+    let mut class_roster: HashMap<u32, Student> = HashMap::new();
+    
+    // Create some students
+    let mut alice = Student::new("Alice Johnson".to_string(), 1001);
+    let mut bob = Student::new("Bob Smith".to_string(), 1002);
+    let mut charlie = Student::new("Charlie Brown".to_string(), 1003);
+    
+    // Add grades for each student
+    alice.add_grade(95.5);
+    alice.add_grade(87.2);
+    alice.add_grade(92.0);
+    
+    bob.add_grade(78.5);
+    bob.add_grade(82.1);
+    bob.add_grade(79.8);
+    
+    charlie.add_grade(88.0);
+    charlie.add_grade(91.5);
+    charlie.add_grade(94.2);
+    charlie.add_grade(89.7);
+    
+    // Add students to roster
+    class_roster.insert(alice.id, alice);
+    class_roster.insert(bob.id, bob);
+    class_roster.insert(charlie.id, charlie);
+    
+    // Print information for all students
+    println!("=== Class Roster ===");
+    for (id, student) in &class_roster {
+        print_student_info(student);
+    }
+    
+    // Find the student with the highest average
+    let best_student = class_roster
+        .values()
+        .max_by(|a, b| {
+            a.average_grade()
+                .unwrap_or(0.0)
+                .partial_cmp(&b.average_grade().unwrap_or(0.0))
+                .unwrap()
+        });
+    
+    if let Some(student) = best_student {
+        println!("🏆 Top performer: {} with {:.2}% average", 
+                 student.name, 
+                 student.average_grade().unwrap());
+    }
+    
+    // Demonstrate error handling
+    println!("\n=== Testing Error Handling ===");
+    if let Some(student) = class_roster.get_mut(&1001) {
+        student.add_grade(105.0); // This will show an error message
+        student.add_grade(-10.0); // This will also show an error message
+    }
+}
