@@ -1,0 +1,8 @@
+[package]
+name = "dungeon_crawler"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bevy = "0.12"
+rand = "0.8"
