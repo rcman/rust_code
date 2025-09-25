@@ -1562,5 +1562,506 @@ impl EnhancedPCManagementApp {
                                     self.selected_device = Some(entry.key().clone());
                                 }
                                 
-                                // Status indicator
-                                let (status_text, status_color) = match device.status.as_str() {
+                                 let (status_text, status_color) = match device.status.as_str() {
+                                    "Online" => ("●", egui::Color32::GREEN),
+                                    "Offline" => ("●", egui::Color32::RED),
+                                    "Connection Failed" => ("●", egui::Color32::YELLOW),
+                                    _ => ("●", egui::Color32::GRAY),
+                                };
+                                
+                                ui.colored_label(status_color, status_text);
+                                
+                                if device.monitoring_enabled {
+                                    ui.colored_label(egui::Color32::BLUE, "📊");
+                                }
+                            });
+                            
+                            ui.separator();
+                        }
+                        
+                        if self.devices.is_empty() {
+                            ui.centered_and_justified(|ui| {
+                                ui.label("No devices found. Click 'Scan Network' to discover devices.");
+                            });
+                        }
+                    });
+                });
+
+                ui.separator();
+
+                // Right panel: Device details and alerts
+                ui.vertical(|ui| {
+                    if let Some(selected_mac) = &self.selected_device.clone() {
+                        if let Some(device_entry) = self.devices.get(selected_mac) {
+                            let device = device_entry.value();
+                            self.show_device_details(ui, device);
+                        } else {
+                            ui.label("Selected device not found");
+                            self.selected_device = None;
+                        }
+                    } else {
+                        // Show alerts summary when no device selected
+                        self.show_alerts_panel(ui, ctx);
+                    }
+                });
+            });
+
+            ui.separator();
+
+            // Bottom panel: Logs
+            ui.collapsing("System Logs", |ui| {
+                egui::ScrollArea::vertical().max_height(150.0).show(ui, |ui| {
+                    for message in &self.log_messages {
+                        ui.label(message);
+                    }
+                    
+                    if self.log_messages.is_empty() {
+                        ui.label("No log messages");
+                    }
+                });
+            });
+        });
+
+        Ok(())
+    }
+
+    fn show_device_details(&self, ui: &mut egui::Ui, device: &NetworkDevice) {
+        ui.heading(format!("Device: {}", device.hostname));
+        
+        // Device info cards
+        ui.horizontal(|ui| {
+            ui.group(|ui| {
+                ui.vertical(|ui| {
+                    ui.label("Basic Information");
+                    ui.separator();
+                    ui.label(format!("IP: {}", device.ip));
+                    ui.label(format!("MAC: {}", device.mac));
+                    ui.label(format!("OS: {}", device.os_type));
+                    ui.label(format!("Status: {}", device.status));
+                    if let Some(last_update) = device.last_update {
+                        ui.label(format!("Last Update: {}", last_update.format("%Y-%m-%d %H:%M:%S")));
+                    }
+                });
+            });
+            
+            ui.group(|ui| {
+                ui.vertical(|ui| {
+                    ui.label("Connection");
+                    ui.separator();
+                    ui.label(format!("Username: {}", device.username));
+                    ui.label(format!("Monitoring: {}", if device.monitoring_enabled { "Enabled" } else { "Disabled" }));
+                    ui.label(format!("Connection Errors: {}", device.connection_errors));
+                });
+            });
+        });
+
+        ui.separator();
+
+        // Real-time metrics (if available)
+        if device.monitoring_enabled {
+            ui.heading("Current Metrics");
+            
+            // Spawn async task to get metrics without blocking UI
+            let rt = tokio::runtime::Handle::current();
+            let ssh_manager = self.ssh_manager.clone();
+            let device_clone = device.clone();
+            
+            // This is a simplified approach - in production you'd want proper state management
+            rt.spawn(async move {
+                if let Ok(metrics) = ssh_manager.get_enhanced_metrics(&device_clone).await {
+                    // In a real implementation, you'd send these metrics back to the UI
+                    // through channels or shared state
+                }
+            });
+
+            ui.horizontal(|ui| {
+                // Show cached metrics from history
+                let rt_handle = tokio::runtime::Handle::current();
+                let metrics_history = device.metrics_history.clone();
+                
+                rt_handle.spawn(async move {
+                    let history_guard = metrics_history.read().await;
+                    
+                    // Get latest values for display
+                    let cpu_latest = history_guard.get("cpu")
+                        .and_then(|h| h.back())
+                        .map(|(value, _)| *value)
+                        .unwrap_or(0.0);
+                    let memory_latest = history_guard.get("memory")
+                        .and_then(|h| h.back())
+                        .map(|(value, _)| *value)
+                        .unwrap_or(0.0);
+                    let disk_latest = history_guard.get("disk")
+                        .and_then(|h| h.back())
+                        .map(|(value, _)| *value)
+                        .unwrap_or(0.0);
+                });
+                
+                // For demo purposes, show some sample values
+                let cpu_color = if device.status == "Online" { egui::Color32::from_rgb(100, 200, 100) } else { egui::Color32::GRAY };
+                let memory_color = if device.status == "Online" { egui::Color32::from_rgb(100, 150, 200) } else { egui::Color32::GRAY };
+                let disk_color = if device.status == "Online" { egui::Color32::from_rgb(200, 150, 100) } else { egui::Color32::GRAY };
+                
+                self.modern_gui.create_metric_card(ui, "CPU Usage", 45.2, "%", cpu_color);
+                self.modern_gui.create_metric_card(ui, "Memory", 67.8, "%", memory_color);
+                self.modern_gui.create_metric_card(ui, "Disk", 23.4, "%", disk_color);
+            });
+
+            ui.separator();
+
+            // Service information
+            if !device.services.is_empty() {
+                ui.heading("Top Services");
+                ui.horizontal_wrapped(|ui| {
+                    for service in device.services.iter().take(5) {
+                        let (name, cpu_usage) = service.pair();
+                        ui.group(|ui| {
+                            ui.vertical(|ui| {
+                                ui.label(name);
+                                ui.label(format!("{:.1}%", cpu_usage));
+                            });
+                        });
+                    }
+                });
+            }
+
+            ui.separator();
+        }
+
+        // Device actions
+        ui.horizontal(|ui| {
+            if ui.button("Toggle Monitoring").clicked() {
+                // In a real implementation, you'd update the device
+                let _ = self.log_tx.send(format!("Toggled monitoring for {}", device.ip));
+            }
+            
+            if ui.button("Connect").clicked() {
+                let ssh = self.ssh_manager.clone();
+                let mut device_clone = device.clone();
+                let log_tx = self.log_tx.clone();
+                
+                tokio::spawn(async move {
+                    match ssh.connect_to_device(&mut device_clone).await {
+                        Ok(true) => {
+                            let _ = log_tx.send(format!("Successfully connected to {}", device_clone.ip));
+                        }
+                        Ok(false) => {
+                            let _ = log_tx.send(format!("Failed to connect to {}", device_clone.ip));
+                        }
+                        Err(e) => {
+                            let _ = log_tx.send(format!("Connection error for {}: {}", device_clone.ip, e));
+                        }
+                    }
+                });
+            }
+            
+            if ui.button("Run Command").clicked() {
+                let _ = self.log_tx.send("Command execution feature not fully implemented".to_string());
+            }
+            
+            if ui.button("Remove Device").clicked() {
+                if let Some(mac) = &self.selected_device {
+                    self.devices.remove(mac);
+                    self.selected_device = None;
+                    let _ = self.log_tx.send(format!("Removed device: {}", device.ip));
+                }
+            }
+        });
+    }
+
+    fn show_alerts_panel(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
+        ui.heading("System Alerts");
+        
+        ui.horizontal(|ui| {
+            ui.label(format!("Active Alerts: {}", self.alerts.len()));
+            ui.separator();
+            ui.checkbox(&mut self.show_resolved_alerts, "Show Resolved");
+            
+            if ui.button("Refresh").clicked() {
+                self.refresh_alerts();
+            }
+        });
+        
+        ui.separator();
+        
+        egui::ScrollArea::vertical().max_height(400.0).show(ui, |ui| {
+            let alerts_to_show: Vec<_> = if self.show_resolved_alerts {
+                // In a real implementation, you'd load resolved alerts from the database
+                self.alerts.clone()
+            } else {
+                self.alerts.iter()
+                    .filter(|alert| !alert.resolved)
+                    .cloned()
+                    .collect()
+            };
+
+            for alert in &alerts_to_show {
+                ui.group(|ui| {
+                    ui.horizontal(|ui| {
+                        // Alert level indicator
+                        let (level_color, level_text) = match alert.level.as_str() {
+                            "critical" => (egui::Color32::RED, "CRITICAL"),
+                            "warning" => (egui::Color32::YELLOW, "WARNING"),
+                            "anomaly" => (egui::Color32::BLUE, "ANOMALY"),
+                            _ => (egui::Color32::GRAY, "INFO"),
+                        };
+                        
+                        self.modern_gui.create_status_badge(ui, level_text, level_color);
+                        
+                        ui.vertical(|ui| {
+                            ui.label(format!("Device: {}", alert.device_ip));
+                            ui.label(format!("Metric: {}", alert.metric));
+                            ui.label(alert.message.clone());
+                            ui.label(format!("Time: {}", alert.timestamp.format("%Y-%m-%d %H:%M:%S")));
+                        });
+                        
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if !alert.acknowledged && ui.button("Acknowledge").clicked() {
+                                if let Err(e) = self.acknowledge_alert(&alert.id) {
+                                    let _ = self.log_tx.send(format!("Failed to acknowledge alert: {}", e));
+                                }
+                            }
+                            
+                            if alert.acknowledged {
+                                ui.colored_label(egui::Color32::GREEN, "✓ ACK");
+                            }
+                            
+                            if alert.resolved {
+                                ui.colored_label(egui::Color32::BLUE, "✓ RESOLVED");
+                            }
+                        });
+                    });
+                });
+                ui.separator();
+            }
+            
+            if alerts_to_show.is_empty() {
+                ui.centered_and_justified(|ui| {
+                    ui.label("No alerts to display");
+                });
+            }
+        });
+    }
+}
+
+// Implementation of eframe::App trait
+impl eframe::App for EnhancedPCManagementApp {
+    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Handle updates safely
+        if let Err(e) = self.safe_update(ctx) {
+            error!("GUI update error: {}", e);
+            let _ = self.log_tx.send(format!("GUI Error: {}", e));
+        }
+        
+        // Request repaint if needed
+        if self.modern_gui.needs_repaint() {
+            ctx.request_repaint();
+            self.modern_gui.repaint_needed.store(false, Ordering::Relaxed);
+        }
+    }
+
+    fn save(&mut self, storage: &mut dyn eframe::Storage) {
+        // Save application state
+        if let Ok(config_json) = serde_json::to_string(&self.config) {
+            storage.set_string("app_config", config_json);
+        }
+        storage.set_string("theme", self.modern_gui.current_theme.clone());
+        storage.set_string("network_range", self.network_range.clone());
+    }
+
+    fn auto_save_interval(&self) -> std::time::Duration {
+        std::time::Duration::from_secs(30)
+    }
+
+    fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+        // Cleanup on exit
+        let rt = tokio::runtime::Handle::current();
+        rt.spawn(async {
+            // Stop monitoring thread
+            // Note: This is simplified - in production you'd have proper cleanup
+        });
+        
+        // Save all devices to database
+        for device in self.devices.iter() {
+            if let Err(e) = self.db_manager.save_device(device.value()) {
+                error!("Failed to save device on exit: {}", e);
+            }
+        }
+        
+        info!("Application shutdown complete");
+    }
+}
+
+// Main function and application setup
+#[tokio::main]
+async fn main() -> Result<()> {
+    // Initialize logging
+    tracing_subscriber::fmt()
+        .with_max_level(Level::INFO)
+        .init();
+
+    info!("Starting Enhanced PC Management Application");
+
+    // Create the application
+    let app = EnhancedPCManagementApp::new().await
+        .context("Failed to initialize application")?;
+
+    // Setup eframe options
+    let options = eframe::NativeOptions {
+        viewport: egui::ViewportBuilder::default()
+            .with_inner_size([1200.0, 800.0])
+            .with_min_inner_size([800.0, 600.0])
+            .with_icon(Arc::new(egui::IconData::default())),
+        ..Default::default()
+    };
+
+    // Run the application
+    eframe::run_native(
+        "Enhanced PC Management System",
+        options,
+        Box::new(|cc| {
+            // Setup custom fonts if needed
+            let mut fonts = egui::FontDefinitions::default();
+            fonts.font_data.insert(
+                "my_font".to_owned(),
+                egui::FontData::from_static(include_bytes!("../assets/fonts/Roboto-Regular.ttf"))
+                    .unwrap_or_else(|_| egui::FontData::default()),
+            );
+            cc.egui_ctx.set_fonts(fonts);
+
+            Box::new(app)
+        }),
+    ).map_err(|e| anyhow!("Failed to run application: {}", e))?;
+
+    Ok(())
+}
+
+// Additional utility functions and tests
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_device_creation() {
+        let device = NetworkDevice::default();
+        assert_eq!(device.status, "");
+        assert!(!device.monitoring_enabled);
+    }
+
+    #[tokio::test]
+    async fn test_alert_manager() {
+        let config = AppConfig::default();
+        let alert_manager = AlertManager::new(config);
+        
+        // Test threshold setting
+        alert_manager.set_threshold("cpu", 80.0, 95.0, 300);
+        assert!(alert_manager.thresholds.contains_key("cpu"));
+        
+        // Test metric checking
+        let result = alert_manager.check_metric("192.168.1.100", "cpu", 85.0).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_performance_optimizer() {
+        let config = AppConfig::default();
+        let optimizer = PerformanceOptimizer::new(&config);
+        
+        let test_key = "test_key".to_string();
+        let test_value = serde_json::json!({"test": "data"});
+        
+        optimizer.cache_query_result(test_key.clone(), test_value.clone());
+        
+        let cached_result = optimizer.get_cached_result(&test_key);
+        assert!(cached_result.is_some());
+        assert_eq!(cached_result.unwrap(), test_value);
+    }
+
+    #[test]
+    fn test_anomaly_detector() {
+        let detector = AnomalyDetector::new(50);
+        
+        // Add baseline data
+        for i in 0..30 {
+            detector.update_baseline("test_device", "cpu", 50.0 + (i as f64 * 0.1));
+        }
+        
+        // Test normal value
+        let (is_anomaly, _) = detector.detect_anomaly("test_device", "cpu", 52.0);
+        assert!(!is_anomaly);
+        
+        // Test anomalous value
+        let (is_anomaly, _) = detector.detect_anomaly("test_device", "cpu", 95.0);
+        assert!(is_anomaly);
+    }
+
+    #[tokio::test]
+    async fn test_ssh_manager() {
+        let config = AppConfig::default();
+        let ssh_manager = SSHManager::new(&config);
+        
+        let mut device = NetworkDevice::default();
+        device.ip = "192.168.1.100".to_string();
+        
+        // Test connection (will be mocked)
+        let result = ssh_manager.connect_to_device(&mut device).await;
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_config_serialization() {
+        let config = AppConfig::default();
+        let serialized = serde_json::to_string(&config).unwrap();
+        let deserialized: AppConfig = serde_json::from_str(&serialized).unwrap();
+        
+        assert_eq!(config.monitoring_interval, deserialized.monitoring_interval);
+        assert_eq!(config.max_history_size, deserialized.max_history_size);
+    }
+}
+
+// Additional helper functions for the GUI
+impl EnhancedPCManagementApp {
+    pub fn export_device_data(&self) -> Result<String> {
+        let devices: Vec<_> = self.devices.iter()
+            .map(|entry| entry.value().clone())
+            .collect();
+        
+        serde_json::to_string_pretty(&devices)
+            .context("Failed to serialize device data")
+    }
+
+    pub fn import_device_data(&self, json_data: &str) -> Result<usize> {
+        let devices: Vec<NetworkDevice> = serde_json::from_str(json_data)
+            .context("Failed to parse device data")?;
+        
+        let mut imported_count = 0;
+        for device in devices {
+            self.devices.insert(device.mac.clone(), device);
+            imported_count += 1;
+        }
+        
+        Ok(imported_count)
+    }
+
+    pub fn get_system_statistics(&self) -> serde_json::Value {
+        let total_devices = self.devices.len();
+        let online_devices = self.devices.iter()
+            .filter(|d| d.status == "Online")
+            .count();
+        let monitoring_enabled = self.devices.iter()
+            .filter(|d| d.monitoring_enabled)
+            .count();
+        let active_alerts = self.alerts.iter()
+            .filter(|a| !a.resolved)
+            .count();
+
+        serde_json::json!({
+            "total_devices": total_devices,
+            "online_devices": online_devices,
+            "monitoring_enabled": monitoring_enabled,
+            "active_alerts": active_alerts,
+            "scan_in_progress": self.is_scanning.load(Ordering::Relaxed),
+            "monitoring_active": self.is_monitoring.load(Ordering::Relaxed)
+        })
+    }
+}
